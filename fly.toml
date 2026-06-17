@@ -1,0 +1,33 @@
+app = 'urmom'
+primary_region = 'ord'
+
+[build]
+  image = 'ghcr.io/gcca/urmom:latest'
+
+[env]
+  DB_URL = '/app/data/urmom.db'
+  PORT = '50051'
+  TZ = 'UTC'
+
+[[mounts]]
+  source = 'urmom_data'
+  destination = '/app/data'
+
+[[services]]
+  internal_port = 50051
+  protocol = 'tcp'
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+
+  [[services.ports]]
+    port = 50051
+    handlers = ['tls']
+
+  [services.concurrency]
+    type = 'connections'
+    hard_limit = 100
+    soft_limit = 80
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '256mb'
