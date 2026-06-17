@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package auth;
+
+service AuthService {
+  rpc UserDetails(UserDetailsRequest) returns (UserDetailsResponse);
+}
+
+message UserDetailsRequest {
+  string username = 1;
+}
+
+message UserDetailsResponse {
+  bool is_active = 1;
+  repeated string apps = 2;
+}

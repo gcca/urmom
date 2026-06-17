@@ -1,0 +1,15 @@
+app = 'urmom'
+primary_region = 'ord'
+
+[build]
+  image = 'ghcr.io/gcca/urmom:latest'
+
+[env]
+  TZ = 'UTC'
+
+[[mounts]]
+  source = 'urmom_data'
+  destination = '/app/data'
+
+[[vm]]
+  size = 'shared-cpu-1x'
