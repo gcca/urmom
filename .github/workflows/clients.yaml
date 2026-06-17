@@ -1,0 +1,154 @@
+name: Clients
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: clients-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CLIENTS_RELEASE_TAG: clients
+  GRPCIO_TOOLS_VERSION: 1.81.1
+  PROTOC_GEN_GO_GRPC_VERSION: v1.6.2
+  PROTOC_GEN_GO_VERSION: v1.36.11
+  PROTOC_GEN_ZIG_VERSION: v2.1.0
+
+jobs:
+  generate:
+    name: Generate Clients
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      artifact_name: ${{ steps.release.outputs.artifact_name }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      safe_release_tag: ${{ steps.release.outputs.safe_release_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_tag="${CLIENTS_RELEASE_TAG}"
+          safe_release_tag="${release_tag//\//-}"
+          artifact_name="clients"
+
+          {
+            echo "artifact_name=${artifact_name}"
+            echo "release_tag=${release_tag}"
+            echo "safe_release_tag=${safe_release_tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set image name
+        shell: bash
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate client code
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .tools/bin .cache/go
+
+          docker run --rm \
+            -e GOBIN=/work/.tools/bin \
+            -e GOPATH=/work/.cache/go \
+            -e GRPCIO_TOOLS_VERSION \
+            -e HOST_GID="$(id -g)" \
+            -e HOST_UID="$(id -u)" \
+            -e PROTOC_GEN_GO_GRPC_VERSION \
+            -e PROTOC_GEN_GO_VERSION \
+            -e PROTOC_GEN_ZIG_VERSION \
+            -v "$PWD:/work" \
+            -w /work \
+            "${IMAGE_NAME}-deps:latest" \
+            sh -euxc '
+              apk add --no-cache go python3-dev
+              python3 -m pip install --break-system-packages --no-cache-dir "grpcio-tools==${GRPCIO_TOOLS_VERSION}"
+              go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+              go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
+              go install "github.com/wasilibs/go-protoc-gen-zig/v2/cmd/protoc-gen-zig@${PROTOC_GEN_ZIG_VERSION}"
+              export PATH="/work/.tools/bin:${PATH}"
+              cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+              cmake --build build -j 10 -t gen_clients
+              chown -R "${HOST_UID}:${HOST_GID}" build .tools .cache
+            '
+
+      - name: Package generated clients
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -d build/clients
+          find build/clients -type f -print
+
+          mkdir -p dist
+          for client_dir in build/clients/*; do
+            test -d "${client_dir}" || continue
+
+            language="$(basename "${client_dir}")"
+            archive="urmom-client-${language}.tar.gz"
+            tar -C build/clients -czf "dist/${archive}" "${language}"
+
+            (
+              cd dist
+              sha256sum "${archive}" > "${archive}.sha256"
+            )
+          done
+
+      - name: Upload client artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.release.outputs.artifact_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs: generate
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download client artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.generate.outputs.artifact_name }}
+          path: dist
+
+      - name: Upload to GitHub release
+        shell: bash
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.generate.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" dist/* \
+              --target "${GITHUB_SHA}" \
+              --title "${RELEASE_TAG}" \
+              --notes "Generated protobuf clients."
+            exit 0
+          fi
+
+          gh release upload "${RELEASE_TAG}" dist/* --clobber
