@@ -4,7 +4,7 @@
 
 (defun usage ()
   (format t "Usage: ./run.lisp <cmd.lisp> [args...]~%")
-  (sb-ext:quit 1))
+  (sb-ext:quit :unix-status 1))
 
 (unless (>= (length sb-ext:*posix-argv*) 2)
   (usage))
@@ -14,7 +14,7 @@
 
   (unless (probe-file script-name)
     (format t "Error: No se encuentra el archivo ~a~%" script-name)
-    (sb-ext:quit 1))
+    (sb-ext:quit :unix-status 1))
 
   (load script-name)
 
