@@ -83,6 +83,92 @@ function(add_proto_client_codegen TARGET)
 
       list(APPEND GEN_FILES ${PB_H} ${PB_CC} ${GRPC_H} ${GRPC_CC})
     endforeach()
+  elseif(LANGUAGE STREQUAL "go")
+    find_program(PROTOC_GEN_GO protoc-gen-go)
+    if(PROTOC_GEN_GO)
+      set(PROTOC_GEN_GO_ARG --plugin=protoc-gen-go=${PROTOC_GEN_GO})
+    else()
+      set(PROTOC_GEN_GO_ARG)
+      message(STATUS
+        "protoc-gen-go not found; target ${TARGET} requires protoc-gen-go on PATH")
+    endif()
+
+    find_program(PROTOC_GEN_GO_GRPC protoc-gen-go-grpc)
+    if(PROTOC_GEN_GO_GRPC)
+      set(PROTOC_GEN_GO_GRPC_ARG --plugin=protoc-gen-go-grpc=${PROTOC_GEN_GO_GRPC})
+    else()
+      set(PROTOC_GEN_GO_GRPC_ARG)
+      message(STATUS
+        "protoc-gen-go-grpc not found; target ${TARGET} requires protoc-gen-go-grpc on PATH")
+    endif()
+
+    foreach(PROTO_FILE ${PROTO_FILES})
+      get_filename_component(NAME ${PROTO_FILE} NAME_WE)
+
+      set(PB_GO "${ARG_OUTPUT_DIR}/${NAME}.pb.go")
+      set(GRPC_GO "${ARG_OUTPUT_DIR}/${NAME}_grpc.pb.go")
+
+      add_custom_command(
+        OUTPUT ${PB_GO} ${GRPC_GO}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${ARG_OUTPUT_DIR}
+        COMMAND $<TARGET_FILE:protobuf::protoc>
+                ${PROTOC_GEN_GO_ARG}
+                ${PROTOC_GEN_GO_GRPC_ARG}
+                --go_out=${ARG_OUTPUT_DIR}
+                --go_opt=paths=source_relative
+                --go-grpc_out=${ARG_OUTPUT_DIR}
+                --go-grpc_opt=paths=source_relative
+                -I ${ARG_PROTO_DIR}
+                ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE}
+        COMMENT "Generating gRPC/Protobuf Go client code for ${NAME}.proto"
+        VERBATIM
+      )
+
+      list(APPEND GEN_FILES ${PB_GO} ${GRPC_GO})
+    endforeach()
+  elseif(LANGUAGE STREQUAL "python")
+    find_package(Python3 QUIET COMPONENTS Interpreter)
+    if(Python3_FOUND)
+      set(PYTHON_GRPC_TOOLS_COMMAND ${Python3_EXECUTABLE})
+      execute_process(
+        COMMAND ${Python3_EXECUTABLE} -c "import grpc_tools.protoc"
+        RESULT_VARIABLE PYTHON_GRPC_TOOLS_RESULT
+        OUTPUT_QUIET
+        ERROR_QUIET
+      )
+      if(NOT PYTHON_GRPC_TOOLS_RESULT EQUAL 0)
+        message(STATUS
+          "grpcio-tools not found; target ${TARGET} requires python3 -m grpc_tools.protoc")
+      endif()
+    else()
+      set(PYTHON_GRPC_TOOLS_COMMAND python3)
+      message(STATUS
+        "Python3 interpreter not found; target ${TARGET} requires python3 and grpcio-tools on PATH")
+    endif()
+
+    foreach(PROTO_FILE ${PROTO_FILES})
+      get_filename_component(NAME ${PROTO_FILE} NAME_WE)
+
+      set(PB_PY "${ARG_OUTPUT_DIR}/${NAME}_pb2.py")
+      set(GRPC_PY "${ARG_OUTPUT_DIR}/${NAME}_pb2_grpc.py")
+
+      add_custom_command(
+        OUTPUT ${PB_PY} ${GRPC_PY}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${ARG_OUTPUT_DIR}
+        COMMAND ${PYTHON_GRPC_TOOLS_COMMAND}
+                -m grpc_tools.protoc
+                --python_out=${ARG_OUTPUT_DIR}
+                --grpc_python_out=${ARG_OUTPUT_DIR}
+                -I ${ARG_PROTO_DIR}
+                ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE}
+        COMMENT "Generating gRPC/Protobuf Python client code for ${NAME}.proto"
+        VERBATIM
+      )
+
+      list(APPEND GEN_FILES ${PB_PY} ${GRPC_PY})
+    endforeach()
   elseif(LANGUAGE STREQUAL "zig")
     find_program(PROTOC_GEN_ZIG protoc-gen-zig)
     if(PROTOC_GEN_ZIG)

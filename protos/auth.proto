@@ -2,6 +2,8 @@ syntax = "proto3";
 
 package auth;
 
+option go_package = "github.com/gcca/urmom/clients/go/auth;auth";
+
 service AuthService {
   rpc UserDetails(UserDetailsRequest) returns (UserDetailsResponse);
 }

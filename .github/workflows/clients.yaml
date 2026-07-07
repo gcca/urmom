@@ -7,6 +7,9 @@ on:
         description: Release tag to create or update with generated clients
         required: true
         type: string
+  push:
+    tags:
+      - "v*"
 
 permissions: {}
 
@@ -15,6 +18,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  GRPCIO_TOOLS_VERSION: 1.81.1
+  PROTOC_GEN_GO_GRPC_VERSION: v1.6.2
+  PROTOC_GEN_GO_VERSION: v1.36.11
   PROTOC_GEN_ZIG_VERSION: v2.1.0
 
 jobs:
@@ -75,14 +81,20 @@ jobs:
           docker run --rm \
             -e GOBIN=/work/.tools/bin \
             -e GOPATH=/work/.cache/go \
+            -e GRPCIO_TOOLS_VERSION \
             -e HOST_GID="$(id -g)" \
             -e HOST_UID="$(id -u)" \
+            -e PROTOC_GEN_GO_GRPC_VERSION \
+            -e PROTOC_GEN_GO_VERSION \
             -e PROTOC_GEN_ZIG_VERSION \
             -v "$PWD:/work" \
             -w /work \
             "${IMAGE_NAME}-deps:latest" \
             sh -euxc '
-              apk add --no-cache go
+              apk add --no-cache go python3-dev
+              python3 -m pip install --break-system-packages --no-cache-dir "grpcio-tools==${GRPCIO_TOOLS_VERSION}"
+              go install "google.golang.org/protobuf/cmd/protoc-gen-go@${PROTOC_GEN_GO_VERSION}"
+              go install "google.golang.org/grpc/cmd/protoc-gen-go-grpc@${PROTOC_GEN_GO_GRPC_VERSION}"
               go install "github.com/wasilibs/go-protoc-gen-zig/v2/cmd/protoc-gen-zig@${PROTOC_GEN_ZIG_VERSION}"
               export PATH="/work/.tools/bin:${PATH}"
               cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -139,7 +151,7 @@ jobs:
           set -euo pipefail
 
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_TAG}" dist/*
+            gh release upload "${RELEASE_TAG}" dist/* --clobber
           else
             gh release create "${RELEASE_TAG}" dist/* \
               --target "${GITHUB_SHA}" \
