@@ -37,4 +37,9 @@
     (format t
             "Creating user with the following options:~%Username: ~a~%Email: ~a~%"
             (getf options :username)
-            (getf options :email))))
+            (getf options :email))
+
+    (sqlite:with-open-database
+     (conn "data/urmom.db")
+      (sqlite:execute-non-query conn "INSERT INTO auth_user (username, email, password) VALUES (?, ?, ?)"
+                                (getf options :username) (getf options :email) "!" ))))

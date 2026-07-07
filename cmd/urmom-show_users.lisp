@@ -13,6 +13,7 @@
                   FROM auth_user u
                   LEFT JOIN dash_binding d ON d.username = u.username
                   GROUP BY u.username, u.email, u.is_active, u.created_at
+                  ORDER BY u.created_at DESC
                   LIMIT 171")))
 
       (dolist (row rows)
