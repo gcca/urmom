@@ -1,0 +1,148 @@
+name: Clients
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Release tag to create or update with generated clients
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: clients-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PROTOC_GEN_ZIG_VERSION: v2.1.0
+
+jobs:
+  generate:
+    name: Generate Clients
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      artifact_name: ${{ steps.release.outputs.artifact_name }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      safe_release_tag: ${{ steps.release.outputs.safe_release_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            release_tag="${{ inputs.release_tag }}"
+          else
+            release_tag="${GITHUB_REF_NAME}"
+          fi
+
+          safe_release_tag="${release_tag//\//-}"
+          artifact_name="clients-${safe_release_tag}"
+
+          {
+            echo "artifact_name=${artifact_name}"
+            echo "release_tag=${release_tag}"
+            echo "safe_release_tag=${safe_release_tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set image name
+        shell: bash
+        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate client code
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .tools/bin .cache/go
+
+          docker run --rm \
+            -e GOBIN=/work/.tools/bin \
+            -e GOPATH=/work/.cache/go \
+            -e HOST_GID="$(id -g)" \
+            -e HOST_UID="$(id -u)" \
+            -e PROTOC_GEN_ZIG_VERSION \
+            -v "$PWD:/work" \
+            -w /work \
+            "${IMAGE_NAME}-deps:latest" \
+            sh -euxc '
+              apk add --no-cache go
+              go install "github.com/wasilibs/go-protoc-gen-zig/v2/cmd/protoc-gen-zig@${PROTOC_GEN_ZIG_VERSION}"
+              export PATH="/work/.tools/bin:${PATH}"
+              cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+              cmake --build build -j 10 -t gen_clients
+              chown -R "${HOST_UID}:${HOST_GID}" build .tools .cache
+            '
+
+      - name: Package generated clients
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          safe_release_tag="${{ steps.release.outputs.safe_release_tag }}"
+          archive="urmom-clients-${safe_release_tag}.tar.gz"
+
+          test -d build/clients
+          find build/clients -type f -print
+
+          mkdir -p dist
+          tar -C build -czf "dist/${archive}" clients
+          (
+            cd dist
+            sha256sum "${archive}" > "${archive}.sha256"
+          )
+
+      - name: Upload client artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.release.outputs.artifact_name }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs: generate
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download client artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ needs.generate.outputs.artifact_name }}
+          path: dist
+
+      - name: Upload to GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.generate.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release upload "${RELEASE_TAG}" dist/*
+          else
+            gh release create "${RELEASE_TAG}" dist/* \
+              --target "${GITHUB_SHA}" \
+              --title "${RELEASE_TAG}" \
+              --notes "Generated protobuf clients for ${RELEASE_TAG}."
+          fi
