@@ -12,8 +12,9 @@ include(cmake/ClientGen.cmake)
 add_grpc_proto_library(urmom_proto "${CMAKE_CURRENT_SOURCE_DIR}/protos")
 add_proto_client_codegen(gen_client_c LANGUAGE C)
 add_proto_client_codegen(gen_client_cpp LANGUAGE CXX)
+add_proto_client_codegen(gen_client_zig LANGUAGE ZIG)
 add_custom_target(gen_clients
-  DEPENDS gen_client_c gen_client_cpp
+  DEPENDS gen_client_c gen_client_cpp gen_client_zig
 )
 
 add_executable(urmom

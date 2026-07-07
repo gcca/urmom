@@ -83,6 +83,36 @@ function(add_proto_client_codegen TARGET)
 
       list(APPEND GEN_FILES ${PB_H} ${PB_CC} ${GRPC_H} ${GRPC_CC})
     endforeach()
+  elseif(LANGUAGE STREQUAL "zig")
+    find_program(PROTOC_GEN_ZIG protoc-gen-zig)
+    if(PROTOC_GEN_ZIG)
+      set(PROTOC_GEN_ZIG_ARG --plugin=protoc-gen-zig=${PROTOC_GEN_ZIG})
+    else()
+      set(PROTOC_GEN_ZIG_ARG)
+      message(STATUS
+        "protoc-gen-zig not found; target ${TARGET} requires protoc-gen-zig on PATH")
+    endif()
+
+    foreach(PROTO_FILE ${PROTO_FILES})
+      get_filename_component(NAME ${PROTO_FILE} NAME_WE)
+
+      set(PB_ZIG "${ARG_OUTPUT_DIR}/${NAME}.pb.zig")
+
+      add_custom_command(
+        OUTPUT ${PB_ZIG}
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${ARG_OUTPUT_DIR}
+        COMMAND $<TARGET_FILE:protobuf::protoc>
+                ${PROTOC_GEN_ZIG_ARG}
+                --zig_out=${ARG_OUTPUT_DIR}
+                -I ${ARG_PROTO_DIR}
+                ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE}
+        COMMENT "Generating Zig protobuf client code for ${NAME}.proto"
+        VERBATIM
+      )
+
+      list(APPEND GEN_FILES ${PB_ZIG})
+    endforeach()
   else()
     message(FATAL_ERROR "Unsupported client protobuf language: ${ARG_LANGUAGE}")
   endif()
