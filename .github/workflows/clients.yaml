@@ -145,6 +145,7 @@ jobs:
       - name: Upload to GitHub release
         shell: bash
         env:
+          GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.generate.outputs.release_tag }}
         run: |
