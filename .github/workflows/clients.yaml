@@ -108,17 +108,23 @@ jobs:
           set -euo pipefail
 
           safe_release_tag="${{ steps.release.outputs.safe_release_tag }}"
-          archive="urmom-clients-${safe_release_tag}.tar.gz"
 
           test -d build/clients
           find build/clients -type f -print
 
           mkdir -p dist
-          tar -C build -czf "dist/${archive}" clients
-          (
-            cd dist
-            sha256sum "${archive}" > "${archive}.sha256"
-          )
+          for client_dir in build/clients/*; do
+            test -d "${client_dir}" || continue
+
+            language="$(basename "${client_dir}")"
+            archive="urmom-client-${language}-${safe_release_tag}.tar.gz"
+            tar -C build/clients -czf "dist/${archive}" "${language}"
+
+            (
+              cd dist
+              sha256sum "${archive}" > "${archive}.sha256"
+            )
+          done
 
       - name: Upload client artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
