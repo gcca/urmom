@@ -144,8 +144,11 @@ jobs:
           set -euo pipefail
 
           if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "::error::Release '${RELEASE_TAG}' must already exist. GitHub Releases require tags, so this workflow will not create one."
-            exit 1
+            gh release create "${RELEASE_TAG}" dist/* \
+              --target "${GITHUB_SHA}" \
+              --title "${RELEASE_TAG}" \
+              --notes "Generated protobuf clients."
+            exit 0
           fi
 
           gh release upload "${RELEASE_TAG}" dist/* --clobber
