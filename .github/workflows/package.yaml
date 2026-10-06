@@ -35,6 +35,7 @@ jobs:
         with:
           context: .
           target: execute
+          build-args: DEPS_IMAGE=ghcr.io/gcca/urmom:deps
           push: true
           platforms: linux/amd64
           tags: ${{ env.IMAGE_NAME }}:latest

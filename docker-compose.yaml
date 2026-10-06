@@ -1,9 +1,19 @@
 services:
+  deps:
+    image: urmom:deps
+    profiles: ["deps"]
+    build:
+      context: .
+      dockerfile: deps/Dockerfile
+      target: deps
+
   urmom:
     build:
       context: .
       dockerfile: Dockerfile
       target: execute
+      args:
+        DEPS_IMAGE: urmom:deps
     image: urmom:latest
     environment:
       TZ: UTC

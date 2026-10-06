@@ -1,61 +1,20 @@
 # syntax=docker/dockerfile:1.7
 
+# Keep in step with deps/Dockerfile: runtime links against its Alpine packages.
 ARG ALPINE_VERSION=3.23
 ARG BUILD_JOBS=4
-ARG CMAKE_VERSION=4.3.2
 ARG DBMATE_IMAGE=ghcr.io/amacneil/dbmate:2.33.0
-ARG GRPC_HEALTH_PROBE_VERSION=v0.4.52
+ARG DEPS_IMAGE=ghcr.io/gcca/urmom:deps
 
 FROM ${DBMATE_IMAGE} AS dbmate
 
-FROM alpine:${ALPINE_VERSION} AS deps
-
-ARG BUILD_JOBS
-ARG CMAKE_VERSION
-
-ENV CMAKE_BUILD_PARALLEL_LEVEL=${BUILD_JOBS} \
-    CMAKE_PREFIX_PATH=/usr \
-    LD_LIBRARY_PATH=/usr/lib
-
-RUN apk add --no-cache \
-    abseil-cpp-dev \
-    build-base \
-    c-ares-dev \
-    git \
-    grpc-dev \
-    gtest-dev \
-    linux-headers \
-    ninja-is-really-ninja \
-    openssl-dev \
-    pkgconf \
-    protobuf-c-dev \
-    protobuf-dev \
-    py3-pip \
-    python3 \
-    re2-dev \
-    sqlite-dev \
-    zlib-dev
-
-RUN python3 -m pip install --break-system-packages --no-cache-dir \
-    "cmake==${CMAKE_VERSION}"
+FROM ${DEPS_IMAGE} AS deps
 
 FROM deps AS build
 
 ARG BUILD_JOBS
-ARG GRPC_HEALTH_PROBE_VERSION
-ARG TARGETARCH
 
 WORKDIR /src
-
-RUN apk add --no-cache curl
-
-RUN case "${TARGETARCH}" in \
-        amd64|arm64) grpc_probe_arch="${TARGETARCH}" ;; \
-        *) echo "unsupported grpc_health_probe architecture: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
-    && curl -fsSLo /usr/local/bin/grpc_health_probe \
-        "https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${GRPC_HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${grpc_probe_arch}" \
-    && chmod +x /usr/local/bin/grpc_health_probe
 
 COPY CMakeLists.txt ./
 COPY 3rdparty ./3rdparty
@@ -75,14 +34,6 @@ RUN if [ "${BUILDPLATFORM}" != "${TARGETPLATFORM}" ]; then \
       echo "execute-with-tools requires a native ${TARGETPLATFORM} builder" >&2; \
       exit 1; \
     fi
-
-RUN apk add --no-cache sbcl \
-    && curl -fsSLo /tmp/quicklisp.lisp https://beta.quicklisp.org/quicklisp.lisp \
-    && sbcl --non-interactive --load /tmp/quicklisp.lisp \
-        --eval '(quicklisp-quickstart:install :path "/root/quicklisp/")' \
-    && sbcl --non-interactive --load /root/quicklisp/setup.lisp \
-        --eval '(ql:quickload (list :sqlite :unix-opts) :silent t)' \
-    && rm /tmp/quicklisp.lisp
 
 COPY cmd ./cmd
 

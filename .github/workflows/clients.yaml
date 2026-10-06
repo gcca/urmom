@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      packages: read
     outputs:
       artifact_name: ${{ steps.release.outputs.artifact_name }}
       release_tag: ${{ steps.release.outputs.release_tag }}
@@ -47,9 +48,18 @@ jobs:
             echo "safe_release_tag=${safe_release_tag}"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Build client toolchain image
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull client toolchain image
         shell: bash
-        run: docker build --target deps --tag urmom-deps:clients .
+        run: |
+          docker pull ghcr.io/gcca/urmom:deps
+          docker tag ghcr.io/gcca/urmom:deps urmom-deps:clients
 
       - name: Generate client code
         shell: bash
